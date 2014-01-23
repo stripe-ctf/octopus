@@ -121,7 +121,9 @@ func (h *Harness) startQueryThreads(req chan *request, threads uint) {
 		go func() {
 			for {
 				request := <-req
-				h.issueQuery(request.node, request.query)
+				for !h.issueQuery(request.node, request.query) {
+					time.Sleep(100 * time.Millisecond)
+				}
 			}
 		}()
 	}
@@ -180,7 +182,7 @@ func (h *Harness) setNodeBooted(node *agent.Agent) {
 	h.booted[node.Name] = true
 }
 
-func (h *Harness) issueQuery(node *agent.Agent, query string) {
+func (h *Harness) issueQuery(node *agent.Agent, query string) bool {
 	log.Debugf("[harness] Making request to %v: %#v", node, query)
 
 	b := bytes.NewBufferString(query)
@@ -194,8 +196,7 @@ func (h *Harness) issueQuery(node *agent.Agent, query string) {
 		if h.nodeBooted(node) {
 			log.Printf("[harness] Sleeping 100ms after request error from %s (in response to %#v): %s", node, query, err)
 		}
-		time.Sleep(100 * time.Millisecond)
-		return
+		return false
 	}
 
 	body, err := ioutil.ReadAll(resp.Body)
@@ -207,8 +208,7 @@ func (h *Harness) issueQuery(node *agent.Agent, query string) {
 
 	if resp.StatusCode != 200 {
 		log.Printf("[harness] Sleeping 100ms after HTTP %d status code from %s (in response to %#v): %s", resp.StatusCode, node, query, body)
-		time.Sleep(100 * time.Millisecond)
-		return
+		return false
 	}
 
 	log.Debugf("[harness] Received response to %v (%#v): %s", node, query, body)
@@ -222,6 +222,7 @@ func (h *Harness) issueQuery(node *agent.Agent, query string) {
 		end:   end,
 		resp:  body,
 	}
+	return true
 }
 
 // Rules for sequence numbers:
