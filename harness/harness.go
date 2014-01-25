@@ -234,8 +234,6 @@ func (h *Harness) issueQuery(node *agent.Agent, query string) bool {
 // Rules for sequence numbers:
 //
 // - Gaps are temporarily OK, but not in the long run.
-// - TODO: make sure there isn't an attack of waiting a long time to respond to the
-//   first request
 func (h *Harness) resultHandler() {
 	results := make(map[int]*result)
 	for {
