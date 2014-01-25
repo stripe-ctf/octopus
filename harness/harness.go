@@ -148,14 +148,20 @@ func (h *Harness) SetNextSequenceNumber(value int) {
 var people = []string{"siddarth", "gdb", "christian", "andy", "carl"}
 
 func (h *Harness) generateInitialQuery() string {
-	peopleFmt := `("` + strings.Join(people, "\"), (\"") + `")`
+	insert := make([]string, 0)
+	for _, name := range people {
+		q := fmt.Sprintf("INSERT INTO ctf3 (name) VALUES (\"%s\");", name)
+		insert = append(insert, q)
+	}
+	peopleFmt := strings.Join(insert, " ")
+
 	query := fmt.Sprintf(`
 CREATE TABLE ctf3
 (name STRING PRIMARY KEY,
 friendCount INT DEFAULT 0,
 requestCount INT DEFAULT 0,
 favoriteWord CHAR(15) DEFAULT "");
-INSERT INTO ctf3 (name) VALUES %s;`,
+%s`,
 		peopleFmt)
 	return strings.TrimLeft(query, "\n")
 }
