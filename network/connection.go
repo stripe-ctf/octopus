@@ -43,7 +43,7 @@ func (conn *connection) establish(l *label, dest string) {
 		d, err := net.Dial("unix", dest)
 		conn.dest = NewSockWrap(d)
 		if err != nil {
-			log.Printf("establish %s: %s", l, err)
+			log.Printf("establish %s: %s (hint: if this is a mysterious 'no such file or directory', that likely just means you need to wait for Octopus to finish setting up its sockets)", l, err)
 			conn.source.Close()
 			return
 		}
