@@ -153,19 +153,29 @@ func (link *Link) listen(l *label, address, target string) {
 }
 
 func (link *Link) Kill(dt time.Duration) {
+	link.GoodbyeForever()
+	time.Sleep(dt)
+	link.WhyHelloThere()
+}
+
+func (link *Link) GoodbyeForever() {
 	link.Lock()
+	defer link.Unlock()
+
 	if link.killcount == 0 {
 		close(link.kill)
 	}
 	link.killcount++
-	link.Unlock()
-	time.Sleep(dt)
+}
+
+func (link *Link) WhyHelloThere() {
 	link.Lock()
+	defer link.Unlock()
+
 	link.killcount--
 	if link.killcount == 0 {
 		link.kill = make(chan bool)
 	}
-	link.Unlock()
 }
 
 func (link *Link) Lag(amount uint, dt time.Duration) {

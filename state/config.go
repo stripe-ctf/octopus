@@ -20,6 +20,9 @@ type config struct {
 
 	parsedContainerIds []string
 	wg                 *exit.WaitGroup
+
+	// This really doesn't belong here. (Arguably, nothing belongs here.)
+	gotRequest chan bool
 }
 
 var conf config
@@ -78,6 +81,8 @@ func AfterParse() {
 	rand.Seed(randomSeed())
 	conf.wg = exit.NewWaitGroup()
 
+	conf.gotRequest = make(chan bool, 1)
+
 	recordConfig()
 }
 
@@ -135,4 +140,8 @@ func WaitGroup() *exit.WaitGroup {
 
 func Args() []string {
 	return conf.args
+}
+
+func GotRequest() chan bool {
+	return conf.gotRequest
 }

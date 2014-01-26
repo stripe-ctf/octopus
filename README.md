@@ -98,6 +98,10 @@ across the network in a particular way:
   in a terminal) for some period of time.
 - The **Murder Monkey** kills an agent's process and respawns it after some
   period of time.
+- The **SPOF Monkey** tries to detect if a node is a single point of failure by
+  netsplitting it away from the rest of the cluster. It only restores network
+  access to that node if the remainder of the cluster can make progress without
+  it.
 
 Each monkey enters the fray after some set delay, and will act in a Poisson
 fashion until the Octopus run terminates.

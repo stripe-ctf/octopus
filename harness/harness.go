@@ -61,10 +61,6 @@ func (h *Harness) Start() {
 	go h.resultHandler()
 }
 
-func (h *Harness) Stop() {
-	state.WaitGroup().Exit()
-}
-
 type request struct {
 	node  *agent.Agent
 	query string
@@ -148,10 +144,9 @@ func (h *Harness) SetNextSequenceNumber(value int) {
 var people = []string{"siddarth", "gdb", "christian", "andy", "carl"}
 
 func (h *Harness) generateInitialQuery() string {
-	insert := make([]string, 0)
-	for _, name := range people {
-		q := fmt.Sprintf("INSERT INTO ctf3 (name) VALUES (\"%s\");", name)
-		insert = append(insert, q)
+	insert := make([]string, len(people))
+	for i, name := range people {
+		insert[i] = fmt.Sprintf("INSERT INTO ctf3 (name) VALUES (\"%s\");", name)
 	}
 	peopleFmt := strings.Join(insert, " ")
 

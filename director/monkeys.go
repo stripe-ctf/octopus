@@ -33,12 +33,8 @@ func (d *Director) spawn(name string) {
 	c := d.config[name]
 	monkey := d.monkey(name)
 
-	if c.frequency == 0 {
-		return
-	}
-
-	time.Sleep(c.offset)
 	start := time.Now()
+	time.Sleep(c.offset)
 
 	for {
 		time.Sleep(time.Duration(rng.ExpFloat64() * float64(c.frequency)))
@@ -140,4 +136,44 @@ func (d *Director) MurderMonkey(rng *rand.Rand, intensity float64) {
 	duration := d.makeDuration(rng, 1000, intensity)
 	log.Printf("[monkey] Murdering %v for %v", target, duration)
 	go target.Kill(duration)
+}
+
+var spofOrder []int
+var spofIndex int
+
+// SpofMonkey detects single points of failure by netsplitting one node at a
+// time away from the rest of the cluster and ensuring that the cluster
+// continues to make progress.
+func (d *Director) SpofMonkey(rng *rand.Rand, intensity float64) {
+	if spofIndex >= state.NodeCount() {
+		return
+	} else if len(spofOrder) != state.NodeCount() {
+		// Unfortunately we can't do this in an init() because we defer
+		// the parsing of flag arguments until later.
+		spofOrder = rng.Perm(state.NodeCount())
+	}
+
+	i := spofOrder[spofIndex]
+	log.Printf("[monkey] Testing if %v is a single point of failure",
+		d.agents[i])
+
+	netsplit := d.net.FindPerimeter([]uint{uint(i)})
+	spofIndex++
+
+	for _, target := range netsplit {
+		target.GoodbyeForever()
+	}
+
+	// We need to get two requests back: chances are the first one was
+	// actually inserted during the previous SpofMonkey run (the channel is
+	// non-blocking with capacity 1)
+	<-state.GotRequest()
+	<-state.GotRequest()
+
+	log.Printf("[monkey] %v is (probably) not a single point of failure!",
+		d.agents[i])
+
+	for _, target := range netsplit {
+		target.WhyHelloThere()
+	}
 }
