@@ -43,10 +43,6 @@ func RecordConn() {
 
 func RecordCorrectQuery() {
 	score.correctQueries += 1
-	select {
-	case conf.gotRequest <- true:
-	default:
-	}
 }
 
 func RecordDisqualifier(reason string) {

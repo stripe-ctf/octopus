@@ -114,14 +114,16 @@ func (h *Harness) startQueryThreads(req chan *request, threads uint) {
 	for i := 0; i < int(threads); i++ {
 		// Stagger them a little bit.
 		time.Sleep(100 * time.Millisecond)
-		go func() {
-			for {
-				request := <-req
-				for !h.issueQuery(request.node, request.query) {
-					time.Sleep(100 * time.Millisecond)
-				}
-			}
-		}()
+		go h.queryThread(req)
+	}
+}
+
+func (h *Harness) queryThread(req chan *request) {
+	for {
+		request := <-req
+		for !h.issueQuery(request.node, request.query) {
+			time.Sleep(100 * time.Millisecond)
+		}
 	}
 }
 
@@ -261,6 +263,12 @@ Original output: %s`, sequenceNumber, result.node, result.query, util.FmtOutput(
 
 		if sequenceNumber > nextSequenceNumber {
 			log.Printf("[%d] Result from %v waiting on sequence number %d", sequenceNumber, result.node, nextSequenceNumber)
+		}
+
+		// Notify SPOF monkey that we got a valid request
+		select {
+		case state.GotRequest() <- true:
+		default:
 		}
 
 		results[sequenceNumber] = result
