@@ -29,7 +29,7 @@ var monkeys = map[string]*MonkeyConfig{
 	"unneighborly": &MonkeyConfig{true, 9 * time.Second, 9 * time.Second},
 	"freeze":       &MonkeyConfig{true, 12 * time.Second, 6 * time.Second},
 	"murder":       &MonkeyConfig{false, 20 * time.Second, 10 * time.Second},
-	"spof":         &MonkeyConfig{true, 0 * time.Second, 0 * time.Second},
+	"spof":         &MonkeyConfig{true, 1 * time.Second, 0 * time.Second},
 }
 
 func init() {

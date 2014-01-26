@@ -14,16 +14,21 @@ import (
 const MONKEY_PERIOD = float64(30*time.Second) / (2 * math.Pi)
 
 // We use reflection to look up monkeys and avoid writing a bunch of boilerplate
-func (d *Director) monkey(name string) func(*rand.Rand, float64) {
+func (d *Director) monkey(name string) func(*rand.Rand, float64) bool {
 	v := reflect.ValueOf(d)
 	name = strings.Title(name)
 	method := v.MethodByName(fmt.Sprintf("%sMonkey", name))
-	return func(rng *rand.Rand, intensity float64) {
+	return func(rng *rand.Rand, intensity float64) bool {
 		args := []reflect.Value{
 			reflect.ValueOf(rng),
 			reflect.ValueOf(intensity),
 		}
-		method.Call(args)
+		ret := method.Call(args)
+		if len(ret) != 1 {
+			return true
+		} else {
+			return ret[0].Bool()
+		}
 	}
 }
 
@@ -34,13 +39,14 @@ func (d *Director) spawn(name string) {
 	monkey := d.monkey(name)
 
 	start := time.Now()
+	keep_going := true
 	time.Sleep(c.offset)
 
-	for {
+	for keep_going {
 		time.Sleep(time.Duration(rng.ExpFloat64() * float64(c.frequency)))
 		dt := time.Now().Sub(start)
 		intensity := (1 - math.Cos(float64(dt)/MONKEY_PERIOD)) / 2
-		monkey(rng, intensity)
+		keep_going = monkey(rng, intensity)
 	}
 }
 
@@ -144,9 +150,9 @@ var spofIndex int
 // SpofMonkey detects single points of failure by netsplitting one node at a
 // time away from the rest of the cluster and ensuring that the cluster
 // continues to make progress.
-func (d *Director) SpofMonkey(rng *rand.Rand, intensity float64) {
+func (d *Director) SpofMonkey(rng *rand.Rand, intensity float64) bool {
 	if spofIndex >= state.NodeCount() {
-		return
+		return false
 	} else if len(spofOrder) != state.NodeCount() {
 		// Unfortunately we can't do this in an init() because we defer
 		// the parsing of flag arguments until later.
@@ -176,4 +182,5 @@ func (d *Director) SpofMonkey(rng *rand.Rand, intensity float64) {
 	for _, target := range netsplit {
 		target.WhyHelloThere()
 	}
+	return true
 }
