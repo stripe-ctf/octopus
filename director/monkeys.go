@@ -166,6 +166,8 @@ func (d *Director) SpofMonkey(rng *rand.Rand, intensity float64) bool {
 	netsplit := d.net.FindPerimeter([]uint{uint(i)})
 	spofIndex++
 
+	d.agents[i].Freeze()
+
 	for _, target := range netsplit {
 		target.GoodbyeForever()
 	}
@@ -182,5 +184,8 @@ func (d *Director) SpofMonkey(rng *rand.Rand, intensity float64) bool {
 	for _, target := range netsplit {
 		target.WhyHelloThere()
 	}
+
+	d.agents[i].Thaw()
+
 	return true
 }

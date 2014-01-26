@@ -183,7 +183,7 @@ func (a *Agent) Kill(dt time.Duration) {
 	a.killcount++
 	a.Unlock()
 
-	<-time.After(dt)
+	time.Sleep(dt)
 
 	a.Lock()
 	defer a.Unlock()
@@ -196,51 +196,52 @@ func (a *Agent) Kill(dt time.Duration) {
 }
 
 func (a *Agent) Stop(dt time.Duration) {
-	a.Lock()
-	if a.stopcount == 0 && a.cmd != nil {
-		a.freeze()
-	}
-	a.stopcount++
-	a.Unlock()
+	a.Freeze()
+	time.Sleep(dt)
+	a.Thaw()
+}
 
-	<-time.After(dt)
-
+func (a *Agent) Freeze() {
 	a.Lock()
 	defer a.Unlock()
+
+	if a.stopcount == 0 && a.cmd != nil {
+		if state.Local() {
+			a.cmd.Process.Signal(syscall.SIGTSTP)
+		} else {
+			file, err := os.Open(a.freezefile)
+			if err != nil {
+				log.Printf("freeze error: %v", err)
+				return
+			}
+			file.WriteString("FROZEN\n")
+			file.Close()
+		}
+	}
+
+	a.stopcount++
+}
+
+func (a *Agent) Thaw() {
+	a.Lock()
+	defer a.Unlock()
+
 	a.stopcount--
+
 	if a.stopcount == 0 && a.cmd == nil {
 		a.start()
 	} else if a.stopcount == 0 {
-		a.thaw()
-	}
-}
-
-func (a *Agent) freeze() {
-	if state.Local() {
-		a.cmd.Process.Signal(syscall.SIGTSTP)
-	} else {
-		file, err := os.Open(a.freezefile)
-		if err != nil {
-			log.Printf("freeze error: %v", err)
-			return
+		if state.Local() {
+			a.cmd.Process.Signal(syscall.SIGCONT)
+		} else {
+			file, err := os.Open(a.freezefile)
+			if err != nil {
+				log.Printf("thaw error: %v", err)
+				return
+			}
+			file.WriteString("THAWED\n")
+			file.Close()
 		}
-		file.WriteString("FROZEN\n")
-		file.Close()
-	}
-}
-
-func (a *Agent) thaw() {
-	if state.Local() {
-		a.cmd.Process.Signal(syscall.SIGCONT)
-	} else {
-		file, err := os.Open(a.freezefile)
-		if err != nil {
-			log.Printf("thaw error: %v", err)
-			return
-		}
-		file.WriteString("THAWED\n")
-		file.Close()
-
 	}
 }
 
