@@ -6,6 +6,7 @@ import (
 	"github.com/stripe-ctf/octopus/log"
 	"math/rand"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -22,7 +23,9 @@ type config struct {
 	wg                 *exit.WaitGroup
 
 	// This really doesn't belong here. (Arguably, nothing belongs here.)
-	gotRequest chan bool
+	lastRequestMutex     sync.Mutex
+	lastGeneratedRequest int
+	gotRequest           chan int
 }
 
 var conf config
@@ -81,7 +84,7 @@ func AfterParse() {
 	rand.Seed(randomSeed())
 	conf.wg = exit.NewWaitGroup()
 
-	conf.gotRequest = make(chan bool, 1)
+	conf.gotRequest = make(chan int, 1)
 
 	recordConfig()
 }
@@ -142,6 +145,18 @@ func Args() []string {
 	return conf.args
 }
 
-func GotRequest() chan bool {
+func LastGeneratedRequest() int {
+	conf.lastRequestMutex.Lock()
+	defer conf.lastRequestMutex.Unlock()
+	return conf.lastGeneratedRequest
+}
+
+func SetLastGeneratedRequest(last int) {
+	conf.lastRequestMutex.Lock()
+	defer conf.lastRequestMutex.Unlock()
+	conf.lastGeneratedRequest = last
+}
+
+func GotRequest() chan int {
 	return conf.gotRequest
 }

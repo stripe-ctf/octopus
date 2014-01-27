@@ -29,17 +29,24 @@ type Harness struct {
 	nextSequenceNumber int
 }
 
-var unixClient = http.Client{
-	Transport: &http.Transport{Dial: unix.Dialer},
-}
-
 type result struct {
+	reqid int
 	node  *agent.Agent
 	query string
 	start time.Time
 	end   time.Time
 	resp  []byte // unparsed response
 	body  []byte // parsed response
+}
+
+type request struct {
+	id    int
+	node  *agent.Agent
+	query string
+}
+
+var unixClient = http.Client{
+	Transport: &http.Transport{Dial: unix.Dialer},
 }
 
 func New(agents agent.List) *Harness {
@@ -61,18 +68,13 @@ func (h *Harness) Start() {
 	go h.resultHandler()
 }
 
-type request struct {
-	node  *agent.Agent
-	query string
-}
-
 func (h *Harness) boot() {
 	rng := state.NewRand("boot")
 	bootQuery := h.generateInitialQuery()
 	i := rng.Intn(len(h.agents))
 	node := h.agents[i]
 
-	for !h.issueQuery(node, bootQuery) {
+	for !h.issueQuery(0, node, bootQuery) {
 		time.Sleep(100 * time.Millisecond)
 	}
 }
@@ -86,22 +88,24 @@ func (h *Harness) startQueryThreads() {
 
 func (h *Harness) queryGenerator() {
 	rng := state.NewRand("querier")
-	for {
+	for i := 1; true; i++ {
 		query := h.generateQuery(rng)
 
-		i := rng.Intn(len(h.agents))
-		node := h.agents[i]
+		agentNo := rng.Intn(len(h.agents))
+		node := h.agents[agentNo]
 		h.request <- &request{
+			id:    i,
 			node:  node,
 			query: query,
 		}
+		state.SetLastGeneratedRequest(i)
 	}
 }
 
 func (h *Harness) queryThread() {
 	for {
 		req := <-h.request
-		for !h.issueQuery(req.node, req.query) {
+		for !h.issueQuery(req.id, req.node, req.query) {
 			time.Sleep(100 * time.Millisecond)
 		}
 	}
@@ -136,7 +140,7 @@ func (h *Harness) generateQuery(rng *rand.Rand) string {
 	return query
 }
 
-func (h *Harness) issueQuery(node *agent.Agent, query string) bool {
+func (h *Harness) issueQuery(reqid int, node *agent.Agent, query string) bool {
 	log.Debugf("[harness] Making request to %v: %#v", node, query)
 
 	b := strings.NewReader(query)
@@ -166,6 +170,7 @@ func (h *Harness) issueQuery(node *agent.Agent, query string) bool {
 	log.Debugf("[harness] Received response to %v (%#v): %s", node, query, body)
 
 	h.result <- &result{
+		reqid: reqid,
 		node:  node,
 		query: query,
 		start: start,
@@ -213,7 +218,7 @@ Original output: %s`, sequenceNumber, result.node, result.query, util.FmtOutput(
 
 		// Notify SPOF monkey that we got a valid request
 		select {
-		case state.GotRequest() <- true:
+		case state.GotRequest() <- result.reqid:
 		default:
 		}
 

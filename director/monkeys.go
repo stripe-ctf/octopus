@@ -172,11 +172,16 @@ func (d *Director) SpofMonkey(rng *rand.Rand, intensity float64) bool {
 		target.GoodbyeForever()
 	}
 
-	// We need to get two requests back: chances are the first one was
-	// actually inserted during the previous SpofMonkey run (the channel is
-	// non-blocking with capacity 1)
-	<-state.GotRequest()
-	<-state.GotRequest()
+	// We need to make sure that the cluster is capable of servicing
+	// requests that no member of the cluster has ever seen before in order
+	// to ensure that the cluster is making progress. To do this, we
+	// determine the request ID of the last request that has been created,
+	// and make sure that we see a request that was created *after* that
+	// (any requests generated after targetRequestId were necessarily
+	// generated after the actions above).
+	targetRequestId := state.LastGeneratedRequest()
+	for <-state.GotRequest() <= targetRequestId {
+	}
 
 	log.Printf("[monkey] %v is (probably) not a single point of failure!",
 		d.agents[i])
