@@ -69,12 +69,15 @@ func (d *Director) Start() {
 		link.SetJitter(d.makeJitter(rng, 1))
 	}
 	d.net.Start()
+	d.agents.Start()
+}
+
+func (d *Director) StartMonkeys() {
 	for monkey, config := range monkeys {
 		if config.enabled {
 			go d.spawn(monkey)
 		}
 	}
-	d.agents.Start()
 }
 
 func (d *Director) Agents() agent.List {

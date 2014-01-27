@@ -68,6 +68,8 @@ OPTIONS:
 	h := harness.New(d.Agents())
 	h.Start()
 
+	d.StartMonkeys()
+
 	select {
 	case <-sigchan:
 		log.Println("Terminating due to signal")
