@@ -4,7 +4,6 @@ import (
 	"flag"
 	"github.com/stripe-ctf/octopus/agent"
 	"github.com/stripe-ctf/octopus/exit"
-	"github.com/stripe-ctf/octopus/harness"
 	"github.com/stripe-ctf/octopus/log"
 	"github.com/stripe-ctf/octopus/network"
 	"github.com/stripe-ctf/octopus/state"
@@ -40,21 +39,17 @@ func init() {
 }
 
 type Director struct {
-	g       *exit.WaitGroup
-	net     *network.Network
-	config  map[string]*MonkeyConfig
-	agents  agent.List
-	harness *harness.Harness
+	g      *exit.WaitGroup
+	net    *network.Network
+	config map[string]*MonkeyConfig
+	agents agent.List
 }
 
 func NewDirector() *Director {
-	agents := agent.NewList()
-
 	return &Director{
-		agents:  agents,
-		net:     network.New(),
-		config:  monkeys,
-		harness: harness.New(agents),
+		agents: agent.NewList(),
+		net:    network.New(),
+		config: monkeys,
 	}
 }
 
@@ -64,10 +59,6 @@ func (d *Director) Dryrun() {
 
 func (d *Director) Start() {
 	rng := state.NewRand("director")
-	d.harness.Start()
-
-	// Give a 100ms grace period for startup
-	time.Sleep(100 * time.Millisecond)
 
 	// Set up directories
 	d.agents.Prepare()
@@ -84,6 +75,10 @@ func (d *Director) Start() {
 		}
 	}
 	d.agents.Start()
+}
+
+func (d *Director) Agents() agent.List {
+	return d.agents
 }
 
 func (d *Director) makeLatency(rng *rand.Rand, intensity float64) uint {

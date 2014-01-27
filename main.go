@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/stripe-ctf/octopus/director"
+	"github.com/stripe-ctf/octopus/harness"
 	"github.com/stripe-ctf/octopus/log"
 	"github.com/stripe-ctf/octopus/state"
 	"io/ioutil"
@@ -63,6 +64,9 @@ OPTIONS:
 	}
 
 	d.Start()
+
+	h := harness.New(d.Agents())
+	h.Start()
 
 	select {
 	case <-sigchan:

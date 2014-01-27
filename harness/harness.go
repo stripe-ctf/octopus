@@ -17,16 +17,14 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 )
 
 type Harness struct {
-	booted map[string]bool
-	agents agent.List
-	sql    *sql.SQL
-	result chan *result
-	mutex  sync.RWMutex
+	agents  agent.List
+	sql     *sql.SQL
+	request chan *request
+	result  chan *result
 
 	nextSequenceNumber int
 }
@@ -49,15 +47,17 @@ func New(agents agent.List) *Harness {
 	util.EnsureAbsent(sqlPath)
 
 	return &Harness{
-		result: make(chan *result, 5),
-		sql:    sql.NewSQL(sqlPath),
-		booted: make(map[string]bool),
-		agents: agents,
+		result:  make(chan *result, 5),
+		request: make(chan *request, 5),
+		sql:     sql.NewSQL(sqlPath),
+		agents:  agents,
 	}
 }
 
 func (h *Harness) Start() {
-	go h.querier()
+	h.boot()
+	go h.startQueryThreads()
+	go h.queryGenerator()
 	go h.resultHandler()
 }
 
@@ -66,81 +66,45 @@ type request struct {
 	query string
 }
 
-func (h *Harness) querier() {
+func (h *Harness) boot() {
+	rng := state.NewRand("boot")
+	bootQuery := h.generateInitialQuery()
+	i := rng.Intn(len(h.agents))
+	node := h.agents[i]
+
+	for !h.issueQuery(node, bootQuery) {
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+func (h *Harness) startQueryThreads() {
+	threads := 4 * state.NodeCount()
+	for i := 0; i < threads; i++ {
+		go h.queryThread()
+	}
+}
+
+func (h *Harness) queryGenerator() {
 	rng := state.NewRand("querier")
-	req := make(chan *request, 0)
-	go func() {
-		for {
-			request := <-req
-
-			// Once we start getting non-initial queries,
-			// it's time to start the query threads.
-			if h.initialized() {
-				// Discard the next request, in case
-				// it's still an initial query (which
-				// it probably is)
-				<-req
-				break
-			}
-
-			h.issueQuery(request.node, request.query)
-			time.Sleep(10 * time.Millisecond)
-		}
-
-		threads := 4 * state.NodeCount()
-		h.startQueryThreads(req, uint(threads))
-	}()
-
 	for {
-		var query string
-		if !h.initialized() {
-			// Initialize the table
-			query = h.generateInitialQuery()
-		} else {
-			// Set an update
-			query = h.generateQuery(rng)
-		}
+		query := h.generateQuery(rng)
 
 		i := rng.Intn(len(h.agents))
 		node := h.agents[i]
-		req <- &request{
+		h.request <- &request{
 			node:  node,
 			query: query,
 		}
 	}
 }
 
-func (h *Harness) startQueryThreads(req chan *request, threads uint) {
-	for i := 0; i < int(threads); i++ {
-		// Stagger them a little bit.
-		time.Sleep(100 * time.Millisecond)
-		go h.queryThread(req)
-	}
-}
-
-func (h *Harness) queryThread(req chan *request) {
+func (h *Harness) queryThread() {
 	for {
-		request := <-req
-		for !h.issueQuery(request.node, request.query) {
+		req := <-h.request
+		for !h.issueQuery(req.node, req.query) {
 			time.Sleep(100 * time.Millisecond)
 		}
 	}
-}
-
-func (h *Harness) initialized() bool {
-	return h.NextSequenceNumber() > 0
-}
-
-func (h *Harness) NextSequenceNumber() int {
-	h.mutex.RLock()
-	defer h.mutex.RUnlock()
-	return h.nextSequenceNumber
-}
-
-func (h *Harness) SetNextSequenceNumber(value int) {
-	h.mutex.Lock()
-	defer h.mutex.Unlock()
-	h.nextSequenceNumber = value
 }
 
 var people = []string{"siddarth", "gdb", "christian", "andy", "carl"}
@@ -172,23 +136,10 @@ func (h *Harness) generateQuery(rng *rand.Rand) string {
 	return query
 }
 
-func (h *Harness) nodeBooted(node *agent.Agent) bool {
-	h.mutex.RLock()
-	defer h.mutex.RUnlock()
-	_, ok := h.booted[node.Name]
-	return ok
-}
-
-func (h *Harness) setNodeBooted(node *agent.Agent) {
-	h.mutex.RLock()
-	defer h.mutex.RUnlock()
-	h.booted[node.Name] = true
-}
-
 func (h *Harness) issueQuery(node *agent.Agent, query string) bool {
 	log.Debugf("[harness] Making request to %v: %#v", node, query)
 
-	b := bytes.NewBufferString(query)
+	b := strings.NewReader(query)
 	url := node.ConnectionString + "/sql"
 
 	start := time.Now()
@@ -196,9 +147,7 @@ func (h *Harness) issueQuery(node *agent.Agent, query string) bool {
 	end := time.Now()
 
 	if err != nil {
-		if h.nodeBooted(node) {
-			log.Printf("[harness] Sleeping 100ms after request error from %s (in response to %#v): %s", node, query, err)
-		}
+		log.Printf("[harness] Sleeping 100ms after request error from %s (in response to %#v): %s", node, query, err)
 		return false
 	}
 
@@ -215,8 +164,6 @@ func (h *Harness) issueQuery(node *agent.Agent, query string) bool {
 	}
 
 	log.Debugf("[harness] Received response to %v (%#v): %s", node, query, body)
-
-	h.setNodeBooted(node)
 
 	h.result <- &result{
 		node:  node,
@@ -242,8 +189,7 @@ func (h *Harness) resultHandler() {
 		}
 		result.body = body
 
-		nextSequenceNumber := h.NextSequenceNumber()
-		if sequenceNumber < nextSequenceNumber {
+		if sequenceNumber < h.nextSequenceNumber {
 			h.losef(`[%d] Received an already-processed sequence number from %v in response to %s
 
 Output: %s`, sequenceNumber, result.node, result.query, util.FmtOutput(result.resp))
@@ -261,8 +207,8 @@ Original output: %s`, sequenceNumber, result.node, result.query, util.FmtOutput(
 			return
 		}
 
-		if sequenceNumber > nextSequenceNumber {
-			log.Printf("[%d] Result from %v waiting on sequence number %d", sequenceNumber, result.node, nextSequenceNumber)
+		if sequenceNumber > h.nextSequenceNumber {
+			log.Printf("[%d] Result from %v waiting on sequence number %d", sequenceNumber, result.node, h.nextSequenceNumber)
 		}
 
 		// Notify SPOF monkey that we got a valid request
@@ -272,20 +218,20 @@ Original output: %s`, sequenceNumber, result.node, result.query, util.FmtOutput(
 		}
 
 		results[sequenceNumber] = result
-		h.processPending(results, nextSequenceNumber)
+		h.processPending(results)
 	}
 }
 
-func (h *Harness) processPending(results map[int]*result, nextSequenceNumber int) {
+func (h *Harness) processPending(results map[int]*result) {
 	for {
-		result, ok := results[nextSequenceNumber]
+		result, ok := results[h.nextSequenceNumber]
 		if !ok {
 			return
 		}
 
 		output, err := h.sql.Execute("harness", result.query)
 		if err != nil {
-			h.losef("[%d] Could not execute statement that %v claimed was fine: %s", nextSequenceNumber, result.node, err)
+			h.losef("[%d] Could not execute statement that %v claimed was fine: %s", h.nextSequenceNumber, result.node, err)
 		}
 
 		if !bytes.Equal(result.body, output.Stdout) {
@@ -293,18 +239,17 @@ func (h *Harness) processPending(results map[int]*result, nextSequenceNumber int
 
 Output: %s
 
-Correct output: %s`, nextSequenceNumber, result.node, result.query, util.FmtOutput(result.body), util.FmtOutput(output.Stdout))
+Correct output: %s`, h.nextSequenceNumber, result.node, result.query, util.FmtOutput(result.body), util.FmtOutput(output.Stdout))
 		} else {
 			state.RecordCorrectQuery()
 			log.Printf(`[harness] [%d] Received correct output from %v for query %s
 
-Output: %s`, nextSequenceNumber, result.node, result.query, util.FmtOutput(result.body))
+Output: %s`, h.nextSequenceNumber, result.node, result.query, util.FmtOutput(result.body))
 		}
 
 		// Update bookkeeping
-		delete(results, nextSequenceNumber)
-		nextSequenceNumber += 1
-		h.SetNextSequenceNumber(nextSequenceNumber)
+		delete(results, h.nextSequenceNumber)
+		h.nextSequenceNumber += 1
 	}
 }
 
