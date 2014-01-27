@@ -120,11 +120,14 @@ func (link *Link) Listen() {
 	label1 := &label{link.agent1, link.agent2, false}
 	label2 := &label{link.agent2, link.agent1, false}
 
-	go link.listen(label1, listen1, target1)
-	go link.listen(label2, listen2, target2)
+	sock1 := link.listen(label1, listen1)
+	sock2 := link.listen(label2, listen2)
+
+	go link.accept(label1, sock1, target1)
+	go link.accept(label2, sock2, target2)
 }
 
-func (link *Link) listen(l *label, address, target string) {
+func (link *Link) listen(l *label, address string) net.Listener {
 	sock, err := net.Listen("unix", address)
 	if err != nil {
 		log.Fatalf("listen: %s", err)
@@ -140,10 +143,13 @@ func (link *Link) listen(l *label, address, target string) {
 		log.Fatalf("chmod: %s", address)
 	}
 
+	return sock
+}
+
+func (link *Link) accept(l *label, sock net.Listener, target string) {
 	for {
 		conn, err := sock.Accept()
 		if err != nil {
-			//log.Print(err)
 			return
 		} else {
 			sock := NewSockWrap(conn)
