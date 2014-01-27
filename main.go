@@ -65,20 +65,25 @@ OPTIONS:
 
 	d.Start()
 
+	go func() {
+		select {
+		case <-sigchan:
+			log.Println("Terminating due to signal")
+		case <-state.WaitGroup().Quit:
+			// Someone else requested an exit
+		case <-time.After(state.Duration()):
+			// Time's up!
+			log.Printf("The allotted %s have elapsed. Exiting!", state.Duration())
+		}
+		state.WaitGroup().Exit()
+	}()
+
 	h := harness.New(d.Agents())
 	h.Start()
 
 	d.StartMonkeys()
 
-	select {
-	case <-sigchan:
-		log.Println("Terminating due to signal")
-	case <-state.WaitGroup().Quit:
-		// Someone else requested an exit
-	case <-time.After(state.Duration()):
-		// Time's up!
-		log.Printf("The allotted %s have elapsed. Exiting!", state.Duration())
-	}
+	<-state.WaitGroup().Quit
 
 	if state.Write() != "" {
 		results := state.JSONResults()

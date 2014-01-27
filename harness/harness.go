@@ -62,13 +62,15 @@ func New(agents agent.List) *Harness {
 }
 
 func (h *Harness) Start() {
-	h.boot()
+	if !h.boot() {
+		return
+	}
 	go h.startQueryThreads()
 	go h.queryGenerator()
 	go h.resultHandler()
 }
 
-func (h *Harness) boot() {
+func (h *Harness) boot() bool {
 	rng := state.NewRand("boot")
 	bootQuery := h.generateInitialQuery()
 	i := rng.Intn(len(h.agents))
@@ -76,7 +78,13 @@ func (h *Harness) boot() {
 
 	for !h.issueQuery(0, node, bootQuery) {
 		time.Sleep(100 * time.Millisecond)
+		select {
+		case <-state.WaitGroup().Quit:
+			return false
+		default:
+		}
 	}
+	return true
 }
 
 func (h *Harness) startQueryThreads() {
